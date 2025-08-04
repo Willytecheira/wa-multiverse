@@ -14,16 +14,321 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      message_templates: {
+        Row: {
+          category: string | null
+          content: string
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string
+          usage_count: number
+          user_id: string
+          variables: string[] | null
+        }
+        Insert: {
+          category?: string | null
+          content: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          updated_at?: string
+          usage_count?: number
+          user_id: string
+          variables?: string[] | null
+        }
+        Update: {
+          category?: string | null
+          content?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+          usage_count?: number
+          user_id?: string
+          variables?: string[] | null
+        }
+        Relationships: []
+      }
+      messages: {
+        Row: {
+          chat_id: string
+          content: string
+          created_at: string
+          from_number: string
+          id: string
+          is_from_me: boolean
+          media_url: string | null
+          message_id: string | null
+          message_type: string
+          metadata: Json | null
+          session_id: string
+          status: Database["public"]["Enums"]["message_status"]
+          timestamp: string
+          to_number: string
+          user_id: string
+        }
+        Insert: {
+          chat_id: string
+          content: string
+          created_at?: string
+          from_number: string
+          id?: string
+          is_from_me?: boolean
+          media_url?: string | null
+          message_id?: string | null
+          message_type?: string
+          metadata?: Json | null
+          session_id: string
+          status?: Database["public"]["Enums"]["message_status"]
+          timestamp?: string
+          to_number: string
+          user_id: string
+        }
+        Update: {
+          chat_id?: string
+          content?: string
+          created_at?: string
+          from_number?: string
+          id?: string
+          is_from_me?: boolean
+          media_url?: string | null
+          message_id?: string | null
+          message_type?: string
+          metadata?: Json | null
+          session_id?: string
+          status?: Database["public"]["Enums"]["message_status"]
+          timestamp?: string
+          to_number?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+          user_id: string
+          username: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+          username: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+          username?: string
+        }
+        Relationships: []
+      }
+      system_metrics: {
+        Row: {
+          id: string
+          metadata: Json | null
+          metric_type: string
+          recorded_at: string
+          value: number
+        }
+        Insert: {
+          id?: string
+          metadata?: Json | null
+          metric_type: string
+          recorded_at?: string
+          value: number
+        }
+        Update: {
+          id?: string
+          metadata?: Json | null
+          metric_type?: string
+          recorded_at?: string
+          value?: number
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      webhooks: {
+        Row: {
+          created_at: string
+          error_count: number
+          events: Database["public"]["Enums"]["webhook_event"][]
+          id: string
+          is_active: boolean
+          last_triggered: string | null
+          name: string
+          secret_key: string | null
+          session_id: string
+          success_count: number
+          updated_at: string
+          url: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          error_count?: number
+          events?: Database["public"]["Enums"]["webhook_event"][]
+          id?: string
+          is_active?: boolean
+          last_triggered?: string | null
+          name: string
+          secret_key?: string | null
+          session_id: string
+          success_count?: number
+          updated_at?: string
+          url: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          error_count?: number
+          events?: Database["public"]["Enums"]["webhook_event"][]
+          id?: string
+          is_active?: boolean
+          last_triggered?: string | null
+          name?: string
+          secret_key?: string | null
+          session_id?: string
+          success_count?: number
+          updated_at?: string
+          url?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webhooks_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_sessions: {
+        Row: {
+          client_info: Json | null
+          connected_at: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          last_activity: string | null
+          name: string
+          phone: string | null
+          qr_code: string | null
+          session_key: string
+          status: Database["public"]["Enums"]["session_status"]
+          updated_at: string
+          user_id: string
+          webhook_url: string | null
+        }
+        Insert: {
+          client_info?: Json | null
+          connected_at?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_activity?: string | null
+          name: string
+          phone?: string | null
+          qr_code?: string | null
+          session_key: string
+          status?: Database["public"]["Enums"]["session_status"]
+          updated_at?: string
+          user_id: string
+          webhook_url?: string | null
+        }
+        Update: {
+          client_info?: Json | null
+          connected_at?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_activity?: string | null
+          name?: string
+          phone?: string | null
+          qr_code?: string | null
+          session_key?: string
+          status?: Database["public"]["Enums"]["session_status"]
+          updated_at?: string
+          user_id?: string
+          webhook_url?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_current_user_role: {
+        Args: Record<PropertyKey, never>
+        Returns: Database["public"]["Enums"]["app_role"]
+      }
+      has_role: {
+        Args: {
+          _user_id: string
+          _role: Database["public"]["Enums"]["app_role"]
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
+      message_status: "sent" | "delivered" | "read" | "failed"
+      session_status:
+        | "initializing"
+        | "qr_ready"
+        | "connected"
+        | "disconnected"
+        | "auth_failure"
+      webhook_event:
+        | "all"
+        | "message-received"
+        | "message-delivered"
+        | "message-from-me"
+        | "session-status"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +455,23 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+      message_status: ["sent", "delivered", "read", "failed"],
+      session_status: [
+        "initializing",
+        "qr_ready",
+        "connected",
+        "disconnected",
+        "auth_failure",
+      ],
+      webhook_event: [
+        "all",
+        "message-received",
+        "message-delivered",
+        "message-from-me",
+        "session-status",
+      ],
+    },
   },
 } as const
