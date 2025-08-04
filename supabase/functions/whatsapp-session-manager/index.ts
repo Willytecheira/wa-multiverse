@@ -1,74 +1,206 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.53.0'
 
-// WhatsApp Web implementation using Deno
-class WhatsAppWebSession {
+// Import WhatsApp Web.js for Deno
+import { Client, LocalAuth, MessageMedia } from 'https://esm.sh/whatsapp-web.js@1.31.0'
+
+// Real WhatsApp Web implementation using whatsapp-web.js
+class RealWhatsAppWebSession {
   private sessionId: string
   private sessionKey: string
   private supabase: any
+  private client: any
   private isConnected = false
   private qrCode: string | null = null
+  private sessionPath: string
 
   constructor(sessionId: string, sessionKey: string, supabase: any) {
     this.sessionId = sessionId
     this.sessionKey = sessionKey
     this.supabase = supabase
+    this.sessionPath = `/tmp/whatsapp-session-${this.sessionId}`
   }
 
   async initialize(): Promise<string> {
-    console.log(`Initializing WhatsApp Web session: ${this.sessionId}`)
+    console.log(`Initializing REAL WhatsApp Web session: ${this.sessionId}`)
     
-    // Generate real WhatsApp Web QR code data
-    const timestamp = Date.now()
-    const clientToken = Math.random().toString(36).substring(2, 15)
-    const serverToken = Math.random().toString(36).substring(2, 12)
-    const browserToken = Math.random().toString(36).substring(2, 8)
-    const deviceId = this.sessionKey.substring(8, 16)
-    
-    // WhatsApp Web QR format: version@ref,secret,serverToken,browserToken,clientToken,ttl
-    this.qrCode = `2@${timestamp}_${deviceId},${clientToken},${serverToken},${browserToken},${Math.random().toString(36).substring(2, 6)},mdwm`
-    
-    console.log(`Generated WhatsApp QR: ${this.qrCode.substring(0, 50)}...`)
-    
-    // Update session in database
-    await this.updateSessionStatus('qr_ready', { qr_code: this.qrCode })
-    
-    // Simulate connection after QR scan (for demo)
-    this.simulateConnection()
-    
-    return this.qrCode
+    try {
+      // Create WhatsApp client with local authentication
+      this.client = new Client({
+        authStrategy: new LocalAuth({
+          clientId: this.sessionId,
+          dataPath: this.sessionPath
+        }),
+        puppeteer: {
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process',
+            '--disable-gpu'
+          ]
+        }
+      })
+
+      // Set up event handlers
+      this.setupEventHandlers()
+
+      // Initialize client
+      await this.client.initialize()
+      
+      console.log(`WhatsApp client initialized for session: ${this.sessionId}`)
+      
+      return this.qrCode || 'Generating QR code...'
+    } catch (error) {
+      console.error(`Error initializing WhatsApp client for session ${this.sessionId}:`, error)
+      await this.updateSessionStatus('auth_failure', { 
+        error: error.message,
+        qr_code: null 
+      })
+      throw error
+    }
   }
 
-  private async simulateConnection() {
-    // Wait 15-45 seconds before "connecting"
-    const delay = 15000 + Math.random() * 30000
-    
-    setTimeout(async () => {
-      if (!this.isConnected) {
-        this.isConnected = true
-        const phone = `+1${Math.floor(Math.random() * 9000000000) + 1000000000}`
-        const connectedAt = new Date().toISOString()
-        
-        await this.updateSessionStatus('connected', {
-          phone,
-          connected_at: connectedAt,
-          qr_code: null // Clear QR code after connection
-        })
-        
-        console.log(`Session ${this.sessionId} connected to ${phone}`)
-        
-        // Start heartbeat
-        this.startHeartbeat()
+  private setupEventHandlers() {
+    // QR Code generation
+    this.client.on('qr', async (qr: string) => {
+      console.log(`Real QR code generated for session ${this.sessionId}`)
+      this.qrCode = qr
+      
+      await this.updateSessionStatus('qr_ready', { 
+        qr_code: qr,
+        last_activity: new Date().toISOString()
+      })
+    })
+
+    // Client ready (authenticated)
+    this.client.on('ready', async () => {
+      console.log(`WhatsApp client ready for session ${this.sessionId}`)
+      this.isConnected = true
+      
+      // Get connected phone info
+      const clientInfo = this.client.info
+      const phone = clientInfo.wid.user
+      
+      await this.updateSessionStatus('connected', {
+        phone: `+${phone}`,
+        connected_at: new Date().toISOString(),
+        qr_code: null, // Clear QR code after successful connection
+        client_info: {
+          phone: phone,
+          name: clientInfo.pushname,
+          platform: clientInfo.platform
+        }
+      })
+
+      // Start heartbeat
+      this.startHeartbeat()
+    })
+
+    // Authentication failure
+    this.client.on('auth_failure', async (msg: string) => {
+      console.error(`Authentication failed for session ${this.sessionId}:`, msg)
+      this.isConnected = false
+      
+      await this.updateSessionStatus('auth_failure', {
+        error: msg,
+        qr_code: null
+      })
+    })
+
+    // Client disconnected
+    this.client.on('disconnected', async (reason: string) => {
+      console.log(`WhatsApp client disconnected for session ${this.sessionId}:`, reason)
+      this.isConnected = false
+      
+      await this.updateSessionStatus('disconnected', {
+        is_active: false,
+        qr_code: null,
+        disconnected_at: new Date().toISOString(),
+        disconnect_reason: reason
+      })
+    })
+
+    // Incoming messages
+    this.client.on('message', async (message: any) => {
+      console.log(`Message received in session ${this.sessionId}:`, message.body)
+      
+      // Store message in database
+      try {
+        await this.supabase
+          .from('messages')
+          .insert({
+            session_id: this.sessionId,
+            message_id: message.id.id,
+            chat_id: message.from,
+            from_number: message.from,
+            to_number: message.to,
+            content: message.body,
+            message_type: message.type,
+            is_from_me: message.fromMe,
+            timestamp: new Date(message.timestamp * 1000).toISOString(),
+            status: 'received',
+            metadata: {
+              hasMedia: message.hasMedia,
+              isGroup: message.from.includes('@g.us'),
+              deviceType: message.deviceType
+            }
+          })
+      } catch (error) {
+        console.error('Error storing message:', error)
       }
-    }, delay)
+
+      // Update last activity
+      await this.updateSessionStatus('connected', {
+        last_activity: new Date().toISOString()
+      })
+    })
+
+    // Message acknowledgment
+    this.client.on('message_ack', async (message: any, ack: number) => {
+      const ackStatus = this.getAckStatus(ack)
+      console.log(`Message ack for session ${this.sessionId}: ${ackStatus}`)
+      
+      // Update message status if it exists
+      try {
+        await this.supabase
+          .from('messages')
+          .update({ status: ackStatus })
+          .eq('message_id', message.id.id)
+          .eq('session_id', this.sessionId)
+      } catch (error) {
+        console.error('Error updating message status:', error)
+      }
+    })
+  }
+
+  private getAckStatus(ack: number): string {
+    switch (ack) {
+      case 1: return 'sent'
+      case 2: return 'delivered'
+      case 3: return 'read'
+      default: return 'failed'
+    }
   }
 
   private startHeartbeat() {
     setInterval(async () => {
-      if (this.isConnected) {
-        await this.updateSessionStatus('connected', {
-          last_activity: new Date().toISOString()
-        })
+      if (this.isConnected && this.client) {
+        try {
+          const state = await this.client.getState()
+          console.log(`Heartbeat for session ${this.sessionId}: ${state}`)
+          
+          await this.updateSessionStatus('connected', {
+            last_activity: new Date().toISOString(),
+            client_state: state
+          })
+        } catch (error) {
+          console.error(`Heartbeat error for session ${this.sessionId}:`, error)
+        }
       }
     }, 30000) // Update every 30 seconds
   }
@@ -88,26 +220,79 @@ class WhatsAppWebSession {
     }
   }
 
+  async sendMessage(to: string, content: string, type: string = 'text') {
+    if (!this.isConnected || !this.client) {
+      throw new Error('WhatsApp client not connected')
+    }
+
+    try {
+      let message
+      if (type === 'text') {
+        message = await this.client.sendMessage(to, content)
+      } else {
+        // Handle media messages
+        const media = MessageMedia.fromFilePath(content)
+        message = await this.client.sendMessage(to, media)
+      }
+
+      console.log(`Message sent from session ${this.sessionId} to ${to}`)
+      
+      // Store sent message
+      await this.supabase
+        .from('messages')
+        .insert({
+          session_id: this.sessionId,
+          message_id: message.id.id,
+          chat_id: to,
+          from_number: message.from,
+          to_number: to,
+          content: content,
+          message_type: type,
+          is_from_me: true,
+          timestamp: new Date().toISOString(),
+          status: 'sent'
+        })
+
+      return message
+    } catch (error) {
+      console.error(`Error sending message from session ${this.sessionId}:`, error)
+      throw error
+    }
+  }
+
   async disconnect() {
+    console.log(`Disconnecting WhatsApp session: ${this.sessionId}`)
+    
+    if (this.client) {
+      try {
+        await this.client.logout()
+        await this.client.destroy()
+      } catch (error) {
+        console.error(`Error during logout for session ${this.sessionId}:`, error)
+      }
+    }
+    
     this.isConnected = false
+    
     await this.updateSessionStatus('disconnected', {
       is_active: false,
-      qr_code: null
+      qr_code: null,
+      disconnected_at: new Date().toISOString()
     })
-    console.log(`Session ${this.sessionId} disconnected`)
   }
 
   getStatus() {
     return {
       isConnected: this.isConnected,
       qrCode: this.qrCode,
-      sessionId: this.sessionId
+      sessionId: this.sessionId,
+      clientState: this.client ? 'initialized' : 'not_initialized'
     }
   }
 }
 
 // Global session store
-const activeSessions = new Map<string, WhatsAppWebSession>()
+const activeSessions = new Map<string, RealWhatsAppWebSession>()
 
 interface SessionRequest {
   action: 'create' | 'delete' | 'status' | 'refresh'
@@ -149,7 +334,7 @@ serve(async (req) => {
         }
 
         // Create new WhatsApp session
-        const whatsappSession = new WhatsAppWebSession(sessionId, sessionData.session_key, supabase)
+        const whatsappSession = new RealWhatsAppWebSession(sessionId, sessionData.session_key, supabase)
         activeSessions.set(sessionId, whatsappSession)
         
         // Initialize and get QR code
