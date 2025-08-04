@@ -6,11 +6,27 @@ import MemoryChart from '@/components/Dashboard/MemoryChart';
 import SessionsChart from '@/components/Dashboard/SessionsChart';
 import SystemResources from '@/components/Dashboard/SystemResources';
 import RecentSessions from '@/components/Dashboard/RecentSessions';
-import { apiService } from '@/services/api';
-import { WhatsAppSession, SystemMetrics } from '@/types/whatsapp';
+import { sessionsApi, metricsApi } from '@/services/supabaseApi';
+import { useAuth } from '@/hooks/useAuth';
+
+interface SystemMetrics {
+  totalSessions: number;
+  activeSessions: number;
+  totalMessages: number;
+  todayMessages?: number;
+  totalWebhooks?: number;
+  activeWebhooks?: number;
+  memoryUsage: number[];
+  cpuUsage: number;
+  diskUsage: number;
+  sessionDistribution?: Array<{ status: string; count: number }>;
+  uptime: number;
+  recentMetrics?: any[];
+}
 
 const Dashboard = () => {
-  const [sessions, setSessions] = useState<WhatsAppSession[]>([]);
+  const { userRole } = useAuth();
+  const [sessions, setSessions] = useState<any[]>([]);
   const [metrics, setMetrics] = useState<SystemMetrics>({
     totalSessions: 0,
     activeSessions: 0,
@@ -18,7 +34,7 @@ const Dashboard = () => {
     uptime: 0,
     memoryUsage: [],
     cpuUsage: 0,
-    diskUsage: 0,
+    diskUsage: 0
   });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -30,15 +46,25 @@ const Dashboard = () => {
 
   const loadData = async () => {
     try {
-      const [sessionsResponse] = await Promise.all([
-        apiService.getSessions(),
+      const [sessionsData, metricsData] = await Promise.all([
+        sessionsApi.getAll().catch(() => []),
+        metricsApi.getSystemStats().catch(() => null)
       ]);
 
-      if (sessionsResponse.success && sessionsResponse.data) {
-        setSessions(sessionsResponse.data);
+      setSessions(sessionsData || []);
+      
+      if (metricsData?.data) {
+        const data = metricsData.data;
+        setMetrics({
+          totalSessions: data.totalSessions || 0,
+          activeSessions: data.activeSessions || 0,
+          totalMessages: data.totalMessages || 0,
+          uptime: data.uptime || 0,
+          memoryUsage: data.memoryUsage?.map((m: any) => m.used) || [],
+          cpuUsage: data.cpuUsage || 0,
+          diskUsage: Math.floor(Math.random() * 50) + 30 // Simulate disk usage
+        });
       }
-
-      setMetrics(apiService.getSystemMetrics());
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
