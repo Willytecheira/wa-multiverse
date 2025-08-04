@@ -51,7 +51,7 @@ class PuppeteerWhatsAppSession {
   private async initializePuppeteer() {
     try {
       // Import Puppeteer for Deno
-      const puppeteer = await import('https://deno.land/x/puppeteer@16.2.0/mod.ts')
+      const { default: puppeteer } = await import('https://deno.land/x/puppeteer@16.2.0/mod.ts')
       
       // Launch browser
       this.browser = await puppeteer.launch({
