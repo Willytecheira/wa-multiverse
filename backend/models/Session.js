@@ -1,4 +1,5 @@
-import { v4 as uuidv4 } from 'uuid';
+import pkg from 'uuid';
+const { v4: uuidv4 } = pkg;
 
 export class Session {
   constructor(data = {}) {
