@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { authService } from '@/services/auth';
+import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { 
   MessageCircle, 
@@ -25,15 +25,23 @@ const Navigation = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const user = authService.getCurrentUser();
+  const { user, signOut } = useAuth();
 
-  const handleLogout = () => {
-    authService.logout();
-    toast({
-      title: "Logged out",
-      description: "You have been successfully logged out",
-    });
-    navigate('/login');
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      toast({
+        title: "Logged out",
+        description: "You have been successfully logged out",
+      });
+      navigate('/auth');
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to log out",
+        variant: "destructive",
+      });
+    }
   };
 
   const navItems = [
@@ -91,13 +99,13 @@ const Navigation = () => {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="text-white hover:bg-white/10">
                   <User className="w-4 h-4 mr-2" />
-                  <span className="hidden sm:block">{user?.username}</span>
+                  <span className="hidden sm:block">{user?.email?.split('@')[0]}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem disabled>
                   <User className="w-4 h-4 mr-2" />
-                  {user?.username} ({user?.role})
+                  {user?.email} (Admin)
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>

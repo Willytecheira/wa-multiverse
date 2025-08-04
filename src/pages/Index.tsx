@@ -1,114 +1,109 @@
-import { useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { MessageSquare, Zap, Shield, BarChart3 } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { MessageCircle, Users, Webhook, BarChart3 } from 'lucide-react';
 
 const Index = () => {
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    // Check auth status without using useAuth hook
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user || null);
-      setLoading(false);
-    };
-    
-    checkAuth();
-  }, []);
+    if (!loading && user) {
+      navigate('/dashboard');
+    }
+  }, [user, loading, navigate]);
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="text-center">
+          <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-4">
+            <MessageCircle className="w-8 h-8 text-white animate-pulse" />
+          </div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
       </div>
     );
   }
 
-  if (user) {
-    return <Navigate to="/admin" replace />;
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-muted">
+    <div className="min-h-screen bg-gradient-to-br from-primary/5 to-secondary/5">
       <div className="container mx-auto px-4 py-16">
         <div className="text-center mb-16">
-          <h1 className="text-4xl font-bold mb-4">WhatsApp Multi-Session API</h1>
-          <p className="text-xl text-muted-foreground mb-8">
-            Gestiona múltiples sesiones de WhatsApp con una API poderosa y escalable
-          </p>
-          <div className="space-x-4">
-            <Button asChild size="lg">
-              <Link to="/auth">Comenzar</Link>
-            </Button>
-            <Button variant="outline" size="lg" asChild>
-              <Link to="/auth">Iniciar Sesión</Link>
-            </Button>
+          <div className="flex items-center justify-center mb-6">
+            <div className="w-20 h-20 bg-primary rounded-full flex items-center justify-center">
+              <MessageCircle className="w-10 h-10 text-white" />
+            </div>
           </div>
+          <h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent mb-4">
+            WhatsApp Multi-Session API
+          </h1>
+          <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
+            Manage multiple WhatsApp Web sessions simultaneously with our powerful, 
+            serverless API built on Supabase and Lovable.
+          </p>
+          <Button 
+            onClick={() => navigate('/auth')} 
+            size="lg" 
+            className="gradient-whatsapp text-lg px-8 py-3"
+          >
+            Get Started
+          </Button>
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
-          <Card>
+        <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto mb-16">
+          <Card className="text-center">
             <CardHeader>
-              <MessageSquare className="h-8 w-8 text-primary mb-2" />
-              <CardTitle>Multi-Sesión</CardTitle>
+              <Users className="w-12 h-12 text-primary mx-auto mb-4" />
+              <CardTitle>Multi-Session Management</CardTitle>
             </CardHeader>
             <CardContent>
               <CardDescription>
-                Maneja múltiples cuentas de WhatsApp desde una sola plataforma
+                Create and manage multiple WhatsApp sessions from a single dashboard
               </CardDescription>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="text-center">
             <CardHeader>
-              <Zap className="h-8 w-8 text-primary mb-2" />
-              <CardTitle>API REST</CardTitle>
+              <Webhook className="w-12 h-12 text-primary mx-auto mb-4" />
+              <CardTitle>Webhook Integration</CardTitle>
             </CardHeader>
             <CardContent>
               <CardDescription>
-                Envía mensajes y gestiona webhooks con nuestra API REST completa
+                Receive real-time notifications about messages and session events
               </CardDescription>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="text-center">
             <CardHeader>
-              <Shield className="h-8 w-8 text-primary mb-2" />
-              <CardTitle>Seguro</CardTitle>
+              <BarChart3 className="w-12 h-12 text-primary mx-auto mb-4" />
+              <CardTitle>Analytics & Monitoring</CardTitle>
             </CardHeader>
             <CardContent>
               <CardDescription>
-                Autenticación robusta y políticas de seguridad avanzadas
-              </CardDescription>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <BarChart3 className="h-8 w-8 text-primary mb-2" />
-              <CardTitle>Analytics</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <CardDescription>
-                Dashboard en tiempo real con métricas y análisis detallados
+                Track message delivery, session status, and system performance
               </CardDescription>
             </CardContent>
           </Card>
         </div>
 
         <div className="text-center">
-          <h2 className="text-2xl font-bold mb-4">¿Listo para empezar?</h2>
-          <p className="text-muted-foreground mb-8">
-            Crea tu cuenta y comienza a gestionar tus sesiones de WhatsApp
+          <h2 className="text-3xl font-bold mb-4">100% Serverless Architecture</h2>
+          <p className="text-muted-foreground mb-8 max-w-3xl mx-auto">
+            Built with modern technologies for scalability and reliability. 
+            No servers to manage, automatic scaling, and global edge deployment.
           </p>
-          <Button asChild size="lg">
-            <Link to="/auth">Acceder al Panel</Link>
-          </Button>
+          <div className="flex flex-wrap justify-center gap-4 text-sm text-muted-foreground">
+            <span className="px-3 py-1 bg-primary/10 rounded-full">Supabase</span>
+            <span className="px-3 py-1 bg-primary/10 rounded-full">Edge Functions</span>
+            <span className="px-3 py-1 bg-primary/10 rounded-full">Real-time Updates</span>
+            <span className="px-3 py-1 bg-primary/10 rounded-full">PostgreSQL</span>
+            <span className="px-3 py-1 bg-primary/10 rounded-full">React</span>
+          </div>
         </div>
       </div>
     </div>
