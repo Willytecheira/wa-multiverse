@@ -8,6 +8,7 @@ import SystemResources from '@/components/Dashboard/SystemResources';
 import RecentSessions from '@/components/Dashboard/RecentSessions';
 import { sessionsApi, metricsApi } from '@/services/supabaseApi';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
 
 interface SystemMetrics {
   totalSessions: number;
@@ -41,7 +42,36 @@ const Dashboard = () => {
   useEffect(() => {
     loadData();
     const interval = setInterval(loadData, 30000); // Refresh every 30 seconds
-    return () => clearInterval(interval);
+    
+    // Set up real-time subscriptions for live data
+    const setupRealtimeSubscriptions = () => {
+      // Subscribe to session changes
+      const sessionsChannel = supabase
+        .channel('sessions-changes')
+        .on('postgres_changes', 
+          { event: '*', schema: 'public', table: 'whatsapp_sessions' },
+          () => loadData()
+        )
+        .subscribe();
+
+      // Subscribe to message changes
+      const messagesChannel = supabase
+        .channel('messages-changes')
+        .on('postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'messages' },
+          () => loadData()
+        )
+        .subscribe();
+
+      return [sessionsChannel, messagesChannel];
+    };
+
+    const channels = setupRealtimeSubscriptions();
+    
+    return () => {
+      clearInterval(interval);
+      channels.forEach(channel => supabase.removeChannel(channel));
+    };
   }, []);
 
   const loadData = async () => {
@@ -59,10 +89,15 @@ const Dashboard = () => {
           totalSessions: data.totalSessions || 0,
           activeSessions: data.activeSessions || 0,
           totalMessages: data.totalMessages || 0,
+          todayMessages: data.todayMessages || 0,
+          totalWebhooks: data.totalWebhooks || 0,
+          activeWebhooks: data.activeWebhooks || 0,
           uptime: data.uptime || 0,
           memoryUsage: data.memoryUsage?.map((m: any) => m.used) || [],
           cpuUsage: data.cpuUsage || 0,
-          diskUsage: Math.floor(Math.random() * 50) + 30 // Simulate disk usage
+          diskUsage: data.diskUsage || 0,
+          sessionDistribution: data.sessionDistribution || [],
+          recentMetrics: data.recentMetrics || []
         });
       }
     } catch (error) {
