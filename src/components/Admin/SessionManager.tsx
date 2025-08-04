@@ -5,10 +5,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { apiService } from '@/services/api';
-import { websocketService } from '@/services/websocket';
+import { sessionsApi } from '@/services/supabaseApi';
+import { supabase } from '@/integrations/supabase/client';
 import { WhatsAppSession } from '@/types/whatsapp';
-import { getStatusColor, formatDateTime } from '@/utils/helpers';
+import { formatDateTime } from '@/utils/helpers';
+import { transformDbSessionToFrontend } from '@/utils/dataTransforms';
 import QRCodeDisplay from '@/components/Common/QRCodeDisplay';
 import {
   Dialog,
@@ -54,21 +55,20 @@ const SessionManager = () => {
 
   useEffect(() => {
     loadSessions();
-    setupWebSocketListeners();
+    setupRealtimeSubscription();
     
     return () => {
-      // Cleanup WebSocket listeners
-      websocketService.off('session_status_changed', handleSessionStatusChange);
+      supabase.removeAllChannels();
     };
   }, []);
 
   const loadSessions = async () => {
     try {
-      const response = await apiService.getSessions();
-      if (response.success && response.data) {
-        setSessions(response.data);
-      }
+      const data = await sessionsApi.getAll();
+      const transformedSessions = data.map(transformDbSessionToFrontend);
+      setSessions(transformedSessions);
     } catch (error) {
+      console.error('Error loading sessions:', error);
       toast({
         title: "Error",
         description: "Failed to load sessions",
@@ -79,30 +79,34 @@ const SessionManager = () => {
     }
   };
 
-  const setupWebSocketListeners = () => {
-    const handleSessionStatusChange = (data: any) => {
-      const { sessionId, status } = data;
-      setSessions(prev => 
-        prev.map(session => 
-          session.id === sessionId 
-            ? { ...session, status, lastActivity: new Date() }
-            : session
-        )
-      );
-    };
-
-    websocketService.on('session_status_changed', handleSessionStatusChange);
-  };
-
-  const handleSessionStatusChange = (data: any) => {
-    const { sessionId, status } = data;
-    setSessions(prev => 
-      prev.map(session => 
-        session.id === sessionId 
-          ? { ...session, status, lastActivity: new Date() }
-          : session
+  const setupRealtimeSubscription = () => {
+    const channel = supabase
+      .channel('whatsapp_sessions_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'whatsapp_sessions'
+        },
+        (payload) => {
+          console.log('Session change received:', payload);
+          if (payload.eventType === 'INSERT') {
+            setSessions(prev => [...prev, transformDbSessionToFrontend(payload.new as any)]);
+          } else if (payload.eventType === 'UPDATE') {
+            setSessions(prev => 
+              prev.map(session => 
+                session.id === payload.new.id 
+                  ? transformDbSessionToFrontend(payload.new as any)
+                  : session
+              )
+            );
+          } else if (payload.eventType === 'DELETE') {
+            setSessions(prev => prev.filter(session => session.id !== payload.old.id));
+          }
+        }
       )
-    );
+      .subscribe();
   };
 
   const createSession = async () => {
@@ -117,16 +121,15 @@ const SessionManager = () => {
 
     setIsCreating(true);
     try {
-      const response = await apiService.startSession(newSessionName.trim());
-      if (response.success && response.data) {
-        setSessions(prev => [...prev, response.data]);
-        setNewSessionName('');
-        toast({
-          title: "Success",
-          description: `Session "${response.data.name}" created successfully`,
-        });
-      }
+      const session = await sessionsApi.create(newSessionName.trim());
+      const transformedSession = transformDbSessionToFrontend(session);
+      setNewSessionName('');
+      toast({
+        title: "Success",
+        description: `Session "${transformedSession.name}" created successfully`,
+      });
     } catch (error) {
+      console.error('Error creating session:', error);
       toast({
         title: "Error",
         description: "Failed to create session",
@@ -139,13 +142,13 @@ const SessionManager = () => {
 
   const deleteSession = async (sessionId: string) => {
     try {
-      await apiService.logoutSession(sessionId);
-      setSessions(prev => prev.filter(s => s.id !== sessionId));
+      await sessionsApi.delete(sessionId);
       toast({
         title: "Success",
         description: "Session deleted successfully",
       });
     } catch (error) {
+      console.error('Error deleting session:', error);
       toast({
         title: "Error",
         description: "Failed to delete session",
@@ -169,11 +172,13 @@ const SessionManager = () => {
 
   const refreshSession = async (sessionId: string) => {
     try {
-      const response = await apiService.getSessionStatus(sessionId);
-      if (response.success) {
-        loadSessions(); // Reload all sessions to get latest data
-      }
+      await sessionsApi.refreshStatus(sessionId);
+      toast({
+        title: "Success",
+        description: "Session status refreshed",
+      });
     } catch (error) {
+      console.error('Error refreshing session:', error);
       toast({
         title: "Error",
         description: "Failed to refresh session",

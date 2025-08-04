@@ -14,10 +14,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { apiService } from '@/services/api';
-import { storageService } from '@/services/storage';
+import { sessionsApi, webhooksApi } from '@/services/supabaseApi';
+import { supabase } from '@/integrations/supabase/client';
 import { WhatsAppSession, WebhookConfig, WebhookEvent } from '@/types/whatsapp';
 import { WEBHOOK_EVENTS } from '@/utils/constants';
+import { transformDbSessionToFrontend } from '@/utils/dataTransforms';
 import { 
   Webhook,
   Settings,
@@ -90,14 +91,22 @@ const WebhookManager = () => {
 
   const loadData = async () => {
     try {
-      const response = await apiService.getSessions();
-      if (response.success && response.data) {
-        setSessions(response.data.filter(s => s.status === 'connected'));
-      }
+      const sessionsData = await sessionsApi.getAll();
+      const transformedSessions = sessionsData.map(transformDbSessionToFrontend);
+      setSessions(transformedSessions.filter(s => s.status === 'connected'));
       
-      const configs = storageService.getWebhookConfigs();
-      setWebhookConfigs(configs);
+      const webhooksData = await webhooksApi.getAll();
+      // Transform webhook data to match WebhookConfig interface
+      const transformedWebhooks: WebhookConfig[] = webhooksData.map(webhook => ({
+        sessionId: webhook.session_id,
+        url: webhook.url,
+        events: webhook.events as WebhookEvent[],
+        isActive: webhook.is_active,
+        createdAt: new Date(webhook.created_at)
+      }));
+      setWebhookConfigs(transformedWebhooks);
     } catch (error) {
+      console.error('Error loading data:', error);
       toast({
         title: "Error",
         description: "Failed to load data",
@@ -109,7 +118,7 @@ const WebhookManager = () => {
   };
 
   const loadWebhookConfig = (sessionId: string) => {
-    const config = storageService.getWebhookConfig(sessionId);
+    const config = webhookConfigs.find(c => c.sessionId === sessionId);
     if (config) {
       setWebhookUrl(config.url);
       setSelectedEvents(config.events);
@@ -192,24 +201,39 @@ const WebhookManager = () => {
 
     setIsSaving(true);
     try {
-      const response = await apiService.setWebhook(selectedSessionId, {
-        url: webhookUrl.trim(),
-        events: selectedEvents,
-        isActive
-      });
-
-      if (response.success && response.data) {
-        setWebhookConfigs(prev => {
-          const filtered = prev.filter(c => c.sessionId !== selectedSessionId);
-          return [...filtered, response.data];
-        });
-
-        toast({
-          title: "Success",
-          description: "Webhook configuration saved successfully",
+      // Check if webhook exists for this session
+      const existingWebhook = webhookConfigs.find(c => c.sessionId === selectedSessionId);
+      
+      if (existingWebhook) {
+        // Update existing webhook
+        const webhookData = await webhooksApi.getAll(selectedSessionId);
+        if (webhookData.length > 0) {
+          await webhooksApi.update(webhookData[0].id, {
+            url: webhookUrl.trim(),
+            events: selectedEvents,
+            is_active: isActive
+          });
+        }
+      } else {
+        // Create new webhook
+        await webhooksApi.create({
+          session_id: selectedSessionId,
+          name: `Webhook for ${sessions.find(s => s.id === selectedSessionId)?.name || 'Unknown'}`,
+          url: webhookUrl.trim(),
+          events: selectedEvents,
+          is_active: isActive
         });
       }
+
+      // Reload webhook configurations
+      await loadData();
+
+      toast({
+        title: "Success",
+        description: "Webhook configuration saved successfully",
+      });
     } catch (error) {
+      console.error('Error saving webhook:', error);
       toast({
         title: "Error",
         description: "Failed to save webhook configuration",
@@ -232,15 +256,19 @@ const WebhookManager = () => {
 
     setIsTesting(true);
     try {
-      // Simulate webhook test
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // In a real implementation, this would send a test webhook
-      toast({
-        title: "Test Successful",
-        description: "Webhook test completed successfully",
-      });
+      // Get the webhook for this session
+      const webhookData = await webhooksApi.getAll(selectedSessionId);
+      if (webhookData.length > 0) {
+        await webhooksApi.test(webhookData[0].id);
+        toast({
+          title: "Test Successful",
+          description: "Webhook test completed successfully",
+        });
+      } else {
+        throw new Error('Webhook not found');
+      }
     } catch (error) {
+      console.error('Error testing webhook:', error);
       toast({
         title: "Test Failed",
         description: "Webhook test failed. Please check your URL and try again.",
@@ -251,18 +279,30 @@ const WebhookManager = () => {
     }
   };
 
-  const removeWebhookConfig = (sessionId: string) => {
-    storageService.removeWebhookConfig(sessionId);
-    setWebhookConfigs(prev => prev.filter(c => c.sessionId !== sessionId));
-    
-    if (selectedSessionId === sessionId) {
-      resetForm();
-    }
+  const removeWebhookConfig = async (sessionId: string) => {
+    try {
+      const webhookData = await webhooksApi.getAll(sessionId);
+      if (webhookData.length > 0) {
+        await webhooksApi.delete(webhookData[0].id);
+        setWebhookConfigs(prev => prev.filter(c => c.sessionId !== sessionId));
+        
+        if (selectedSessionId === sessionId) {
+          resetForm();
+        }
 
-    toast({
-      title: "Success",
-      description: "Webhook configuration removed",
-    });
+        toast({
+          title: "Success",
+          description: "Webhook configuration removed",
+        });
+      }
+    } catch (error) {
+      console.error('Error removing webhook:', error);
+      toast({
+        title: "Error",
+        description: "Failed to remove webhook configuration",
+        variant: "destructive",
+      });
+    }
   };
 
   if (isLoading) {

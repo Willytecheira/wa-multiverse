@@ -13,10 +13,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { apiService } from '@/services/api';
-import { storageService } from '@/services/storage';
+import { sessionsApi, messagesApi } from '@/services/supabaseApi';
 import { WhatsAppSession, Message } from '@/types/whatsapp';
 import { validatePhoneNumber, formatPhoneNumber, formatDateTime } from '@/utils/helpers';
+import { transformDbSessionToFrontend } from '@/utils/dataTransforms';
 import { 
   Send,
   MessageCircle,
@@ -68,16 +68,16 @@ const MessageSender = () => {
 
   const loadData = async () => {
     try {
-      const response = await apiService.getSessions();
-      if (response.success && response.data) {
-        const connectedSessions = response.data.filter(s => s.status === 'connected');
-        setSessions(connectedSessions);
-        
-        if (connectedSessions.length > 0 && !selectedSessionId) {
-          setSelectedSessionId(connectedSessions[0].id);
-        }
+      const sessionsData = await sessionsApi.getAll();
+      const transformedSessions = sessionsData.map(transformDbSessionToFrontend);
+      const connectedSessions = transformedSessions.filter(s => s.status === 'connected');
+      setSessions(connectedSessions);
+      
+      if (connectedSessions.length > 0 && !selectedSessionId) {
+        setSelectedSessionId(connectedSessions[0].id);
       }
     } catch (error) {
+      console.error('Error loading sessions:', error);
       toast({
         title: "Error",
         description: "Failed to load sessions",
@@ -88,10 +88,24 @@ const MessageSender = () => {
     }
   };
 
-  const loadMessageHistory = () => {
+  const loadMessageHistory = async () => {
     if (selectedSessionId) {
-      const messages = storageService.getMessagesBySession(selectedSessionId);
-      setMessageHistory(messages.slice(-10)); // Show last 10 messages
+      try {
+        const messagesData = await messagesApi.getAll(selectedSessionId, 10);
+        // Transform message data to match Message interface
+        const transformedMessages: Message[] = messagesData.map(msg => ({
+          id: msg.id,
+          sessionId: msg.session_id,
+          to: msg.to_number,
+          content: msg.content,
+          timestamp: new Date(msg.timestamp),
+          status: msg.status
+        }));
+        setMessageHistory(transformedMessages);
+      } catch (error) {
+        console.error('Error loading message history:', error);
+        setMessageHistory([]);
+      }
     } else {
       setMessageHistory([]);
     }
@@ -143,18 +157,17 @@ const MessageSender = () => {
     setIsSending(true);
     try {
       const formattedPhone = formatPhoneNumber(phoneNumber);
-      const response = await apiService.sendMessage(selectedSessionId, formattedPhone, message.trim());
+      await messagesApi.send(selectedSessionId, formattedPhone, message.trim());
       
-      if (response.success && response.data) {
-        toast({
-          title: "Success",
-          description: `Message sent to ${formattedPhone}`,
-        });
-        
-        setMessage('');
-        loadMessageHistory(); // Refresh message history
-      }
+      toast({
+        title: "Success",
+        description: `Message sent to ${formattedPhone}`,
+      });
+      
+      setMessage('');
+      loadMessageHistory(); // Refresh message history
     } catch (error) {
+      console.error('Error sending message:', error);
       toast({
         title: "Error",
         description: "Failed to send message",

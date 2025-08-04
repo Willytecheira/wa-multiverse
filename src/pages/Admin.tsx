@@ -4,6 +4,7 @@ import Notifications from '@/components/Common/Notifications';
 import SessionManager from '@/components/Admin/SessionManager';
 import WebhookManager from '@/components/Admin/WebhookManager';
 import MessageSender from '@/components/Admin/MessageSender';
+import UserManager from '@/components/Admin/UserManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const Admin = () => {
@@ -21,10 +22,11 @@ const Admin = () => {
         </div>
 
         <Tabs defaultValue="sessions" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="sessions">Sessions</TabsTrigger>
             <TabsTrigger value="webhooks">Webhooks</TabsTrigger>
             <TabsTrigger value="messages">Messages</TabsTrigger>
+            <TabsTrigger value="users">Users</TabsTrigger>
           </TabsList>
           
           <TabsContent value="sessions">
@@ -37,6 +39,10 @@ const Admin = () => {
           
           <TabsContent value="messages">
             <MessageSender />
+          </TabsContent>
+          
+          <TabsContent value="users">
+            <UserManager />
           </TabsContent>
         </Tabs>
       </main>
