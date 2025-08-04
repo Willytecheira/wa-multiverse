@@ -6,6 +6,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// WhatsApp Microservice URL - Configure this based on your deployment
+const WHATSAPP_MICROSERVICE_URL = Deno.env.get('WHATSAPP_MICROSERVICE_URL') || 'http://localhost:3001'
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -24,83 +27,142 @@ serve(async (req) => {
 
     switch (action) {
       case 'create':
-        // Simulate successful session initialization
-        console.log(`Starting WhatsApp Web Simulator for session: ${sessionId}`)
+        // Call WhatsApp microservice to create real session
+        console.log(`Creating real WhatsApp session: ${sessionId}`)
         
-        // Update session to qr_ready status immediately
-        setTimeout(async () => {
-          try {
-            const qrContent = `whatsapp://qr/${Math.random().toString(36).substring(2, 15)}`
-            await supabase
-              .from('whatsapp_sessions')
-              .update({
-                status: 'qr_ready',
-                qr_code: qrContent,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', sessionId)
-            
-            console.log(`QR code generated for session ${sessionId}`)
-          } catch (error) {
-            console.error('Error generating QR:', error)
-          }
-        }, 2000)
+        try {
+          const response = await fetch(`${WHATSAPP_MICROSERVICE_URL}/session/create`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ sessionId })
+          })
 
-        // Simulate connection after 20 seconds
-        setTimeout(async () => {
-          try {
-            const phoneNumber = `+1${Math.floor(1000000000 + Math.random() * 9000000000)}`
-            await supabase
-              .from('whatsapp_sessions')
-              .update({
-                status: 'connected',
-                phone: phoneNumber,
-                connected_at: new Date().toISOString(),
-                last_activity: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', sessionId)
-            
-            console.log(`Session ${sessionId} connected with phone ${phoneNumber}`)
-          } catch (error) {
-            console.error('Error connecting session:', error)
-          }
-        }, 20000)
+          const result = await response.json()
 
-        return new Response(
-          JSON.stringify({
-            success: true,
-            message: 'Session initialized successfully'
-          }),
-          {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 200,
+          if (!response.ok) {
+            throw new Error(result.error || 'Failed to create session in microservice')
           }
-        )
+
+          console.log(`Real WhatsApp session ${sessionId} creation started`)
+          
+          return new Response(
+            JSON.stringify({
+              success: true,
+              message: 'Real WhatsApp session creation started',
+              microservice: result
+            }),
+            {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              status: 200,
+            }
+          )
+        } catch (error) {
+          console.error(`Error creating session ${sessionId}:`, error)
+          
+          // Update session status to error
+          await supabase
+            .from('whatsapp_sessions')
+            .update({
+              status: 'error',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', sessionId)
+
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: `Failed to create session: ${error.message}`
+            }),
+            {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              status: 500,
+            }
+          )
+        }
 
       case 'delete':
-        // Clean up session
-        console.log(`Cleaning up session ${sessionId}`)
-        await supabase
-          .from('whatsapp_sessions')
-          .update({
-            status: 'disconnected',
-            updated_at: new Date().toISOString()
+        // Call microservice to delete session
+        console.log(`Deleting session ${sessionId}`)
+        
+        try {
+          const response = await fetch(`${WHATSAPP_MICROSERVICE_URL}/session/${sessionId}`, {
+            method: 'DELETE',
           })
-          .eq('id', sessionId)
 
-        return new Response(
-          JSON.stringify({
-            success: true,
-            message: 'Session deleted successfully'
-          }),
-          {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 200,
+          const result = await response.json()
+
+          if (!response.ok) {
+            console.warn(`Microservice delete failed: ${result.error}`)
           }
-        )
+
+          // Always update Supabase regardless of microservice response
+          await supabase
+            .from('whatsapp_sessions')
+            .update({
+              status: 'disconnected',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', sessionId)
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              message: 'Session deleted successfully'
+            }),
+            {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              status: 200,
+            }
+          )
+        } catch (error) {
+          console.error(`Error deleting session ${sessionId}:`, error)
+          
+          // Still update Supabase even if microservice fails
+          await supabase
+            .from('whatsapp_sessions')
+            .update({
+              status: 'disconnected',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', sessionId)
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              message: 'Session marked as disconnected'
+            }),
+            {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              status: 200,
+            }
+          )
+        }
 
       case 'get_qr':
+        // Try to get QR from microservice first, then fallback to database
+        try {
+          const response = await fetch(`${WHATSAPP_MICROSERVICE_URL}/session/${sessionId}/qr`)
+          
+          if (response.ok) {
+            const result = await response.json()
+            return new Response(
+              JSON.stringify({
+                success: true,
+                qr_code: result.qrCode
+              }),
+              {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 200,
+              }
+            )
+          }
+        } catch (error) {
+          console.warn(`Microservice QR fetch failed: ${error.message}`)
+        }
+
+        // Fallback to database
         const { data: qrSession } = await supabase
           .from('whatsapp_sessions')
           .select('qr_code, status')
@@ -132,6 +194,30 @@ serve(async (req) => {
         }
 
       case 'get_status':
+        // Try to get status from microservice first, then fallback to database
+        try {
+          const response = await fetch(`${WHATSAPP_MICROSERVICE_URL}/session/${sessionId}/status`)
+          
+          if (response.ok) {
+            const result = await response.json()
+            return new Response(
+              JSON.stringify({
+                success: true,
+                status: result.status,
+                phone: result.phone,
+                hasQR: result.hasQR
+              }),
+              {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 200,
+              }
+            )
+          }
+        } catch (error) {
+          console.warn(`Microservice status fetch failed: ${error.message}`)
+        }
+
+        // Fallback to database
         const { data: statusSession } = await supabase
           .from('whatsapp_sessions')
           .select('*')

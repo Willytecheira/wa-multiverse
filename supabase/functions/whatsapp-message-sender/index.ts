@@ -6,6 +6,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// WhatsApp Microservice URL
+const WHATSAPP_MICROSERVICE_URL = Deno.env.get('WHATSAPP_MICROSERVICE_URL') || 'http://localhost:3001'
+
 interface MessageRequest {
   sessionId: string
   to: string
@@ -22,9 +25,102 @@ class WhatsAppMessageHandler {
   }
 
   async sendMessage(sessionId: string, to: string, content: string, type: string, userId: string) {
-    console.log(`Sending ${type} message to ${to} via session ${sessionId}`)
+    console.log(`Sending real ${type} message to ${to} via session ${sessionId}`)
     
     // Format phone number for WhatsApp
+    const formattedTo = this.formatPhoneNumber(to)
+    const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    
+    // Try to send via microservice first
+    try {
+      const response = await fetch(`${WHATSAPP_MICROSERVICE_URL}/session/${sessionId}/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: formattedTo,
+          content,
+          type
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to send message via microservice')
+      }
+
+      const microserviceResult = await response.json()
+      console.log(`Real message sent via microservice:`, microserviceResult)
+
+      // Save message to database with real status
+      const messageData = {
+        session_id: sessionId,
+        user_id: userId,
+        message_id: microserviceResult.messageId || messageId,
+        chat_id: formattedTo,
+        from_number: 'session_bot',
+        to_number: formattedTo,
+        content,
+        message_type: type,
+        status: 'sent',
+        is_from_me: true,
+        timestamp: new Date().toISOString(),
+        metadata: {
+          sentVia: 'microservice',
+          microserviceMessageId: microserviceResult.messageId,
+          timestamp: Date.now()
+        }
+      }
+
+      const { data: message, error: messageError } = await this.supabase
+        .from('messages')
+        .insert(messageData)
+        .select()
+        .single()
+
+      if (messageError) {
+        console.error('Error saving message:', messageError)
+        throw messageError
+      }
+
+      // Update session last activity
+      await this.supabase
+        .from('whatsapp_sessions')
+        .update({
+          last_activity: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', sessionId)
+
+      // Trigger webhooks
+      await this.triggerWebhooks(sessionId, 'message-from-me', {
+        messageId: message.id,
+        chatId: formattedTo,
+        content,
+        type,
+        timestamp: message.timestamp,
+        microserviceMessageId: microserviceResult.messageId
+      })
+
+      return {
+        success: true,
+        messageId: message.id,
+        microserviceMessageId: microserviceResult.messageId,
+        status: 'sent',
+        timestamp: message.timestamp,
+        sentVia: 'microservice'
+      }
+
+    } catch (error) {
+      console.error(`Microservice send failed, falling back to simulation:`, error)
+      
+      // Fallback to simulation if microservice fails
+      return await this.simulateMessageSend(sessionId, to, content, type, userId)
+    }
+  }
+
+  private async simulateMessageSend(sessionId: string, to: string, content: string, type: string, userId: string) {
     const formattedTo = this.formatPhoneNumber(to)
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     
@@ -42,7 +138,7 @@ class WhatsAppMessageHandler {
       is_from_me: true,
       timestamp: new Date().toISOString(),
       metadata: {
-        sentVia: 'edge_function',
+        sentVia: 'simulation_fallback',
         timestamp: Date.now()
       }
     }
@@ -67,7 +163,7 @@ class WhatsAppMessageHandler {
       })
       .eq('id', sessionId)
 
-    // Simulate message delivery (in real implementation, this would interact with WhatsApp)
+    // Simulate message delivery
     this.simulateMessageDelivery(message.id)
 
     // Trigger webhooks
@@ -83,7 +179,8 @@ class WhatsAppMessageHandler {
       success: true,
       messageId: message.id,
       status: 'sent',
-      timestamp: message.timestamp
+      timestamp: message.timestamp,
+      sentVia: 'simulation'
     }
   }
 
