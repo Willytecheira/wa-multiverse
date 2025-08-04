@@ -81,7 +81,7 @@ const UserManager = () => {
         return {
           ...profile,
           user_roles: userRole ? [{ role: userRole.role }] : [{ role: 'user' as const }],
-          email: `${profile.username}@example.com`, // Fallback since we can't access auth data
+          email: profile.username.includes('@') ? profile.username : `${profile.username}@company.com`,
           last_sign_in_at: undefined
         };
       });
@@ -101,7 +101,7 @@ const UserManager = () => {
         const simpleUsers: UserProfile[] = (profilesData || []).map(profile => ({
           ...profile,
           user_roles: [{ role: 'user' as const }],
-          email: `${profile.username}@example.com`
+          email: profile.username.includes('@') ? profile.username : `${profile.username}@company.com`
         }));
         
         setUsers(simpleUsers);

@@ -12,6 +12,7 @@ import sessionRoutes from './backend/routes/sessions.js';
 import messageRoutes from './backend/routes/messages.js';
 import webhookRoutes from './backend/routes/webhooks.js';
 import healthRoutes from './backend/routes/health.js';
+import systemRoutes from './backend/routes/system.js';
 import { WhatsAppService } from './backend/services/whatsapp.js';
 import { SocketService } from './backend/services/socket.js';
 import { authMiddleware } from './backend/middleware/auth.js';
@@ -53,10 +54,11 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/health', healthRoutes);
+app.use('/api/system', systemRoutes);
 app.use('/api', authMiddleware); // Protect all other routes
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/messages', messageRoutes);
-app.use('/api/webhooks', webhookRoutes);
+app.use('/api/webhooks', webhooksRoutes);
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
