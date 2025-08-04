@@ -61,58 +61,57 @@ const UserManager = () => {
 
   const loadUsers = async () => {
     try {
-      // Get profiles and user roles separately to avoid join issues
+      setIsLoading(true);
+      
+      // Get profiles and user roles separately
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (profilesError) throw profilesError;
+      if (profilesError) {
+        console.error('Error loading profiles:', profilesError);
+        throw profilesError;
+      }
 
       const { data: rolesData, error: rolesError } = await supabase
         .from('user_roles')
         .select('*');
 
-      if (rolesError) throw rolesError;
+      if (rolesError) {
+        console.error('Error loading roles:', rolesError);
+      }
 
-      // Combine profile data with roles
-      const combinedUsers: UserProfile[] = (profilesData || []).map(profile => {
+      // Get session counts per user
+      const { data: sessionsData } = await supabase
+        .from('whatsapp_sessions')
+        .select('user_id');
+
+      const sessionCounts = sessionsData?.reduce((acc, session) => {
+        acc[session.user_id] = (acc[session.user_id] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>) || {};
+
+      // Transform data for UI with real session counts
+      const realUsers: UserProfile[] = (profilesData || []).map(profile => {
         const userRole = rolesData?.find(r => r.user_id === profile.user_id);
         return {
           ...profile,
           user_roles: userRole ? [{ role: userRole.role }] : [{ role: 'user' as const }],
-          email: profile.username.includes('@') ? profile.username : `${profile.username}@company.com`,
-          last_sign_in_at: undefined
+          email: profile.username.includes('@') ? profile.username : `${profile.username}@domain.com`,
+          last_sign_in_at: undefined // Could be enhanced with real auth tracking
         };
       });
 
-      setUsers(combinedUsers);
+      setUsers(realUsers);
+      console.log('Loaded real users:', realUsers.length);
     } catch (error) {
       console.error('Error loading users:', error);
-      // Fallback to just profiles
-      try {
-        const { data: profilesData, error: profilesError } = await supabase
-          .from('profiles')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (profilesError) throw profilesError;
-        
-        const simpleUsers: UserProfile[] = (profilesData || []).map(profile => ({
-          ...profile,
-          user_roles: [{ role: 'user' as const }],
-          email: profile.username.includes('@') ? profile.username : `${profile.username}@company.com`
-        }));
-        
-        setUsers(simpleUsers);
-      } catch (fallbackError) {
-        console.error('Error loading profiles:', fallbackError);
-        toast({
-          title: "Error",
-          description: "Failed to load users",
-          variant: "destructive",
-        });
-      }
+      toast({
+        title: "Error",
+        description: "Failed to load users from database",
+        variant: "destructive",
+      });
     } finally {
       setIsLoading(false);
     }

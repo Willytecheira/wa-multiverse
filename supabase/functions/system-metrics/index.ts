@@ -63,15 +63,16 @@ serve(async (req) => {
           const response = await fetch(`${backendUrl}/api/system/metrics`);
           const systemMetrics = await response.json();
           
-          if (systemMetrics.success) {
-            memoryUsage = systemMetrics.data.memory;
-            cpuUsage = systemMetrics.data.cpu;
-            diskUsage = systemMetrics.data.disk;
+          if (systemMetrics.success && systemMetrics.data) {
+            memoryUsage = systemMetrics.data.memoryHistory || [];
+            cpuUsage = systemMetrics.data.cpuUsage || 0;
+            diskUsage = systemMetrics.data.diskUsage || 0;
+            console.log('Using real backend metrics');
           } else {
             throw new Error('Backend metrics not available');
           }
         } catch (error) {
-          console.error('Failed to get real system metrics, using database metrics:', error);
+          console.error('Failed to get real system metrics, using fallback:', error);
           
           // Get memory usage from database
           const { data: memoryMetrics } = await supabase
@@ -82,21 +83,12 @@ serve(async (req) => {
             .order('recorded_at', { ascending: true });
 
           memoryUsage = memoryMetrics && memoryMetrics.length > 0 
-            ? memoryMetrics.map(m => ({
-                time: m.recorded_at,
-                used: Number(m.value),
-                total: 1024
-              }))
+            ? memoryMetrics.map(m => Math.min(95, Math.max(5, Number(m.value) || 0)))
             : Array.from({ length: 24 }, (_, i) => {
-                const hour = new Date(Date.now() - (23 - i) * 60 * 60 * 1000);
-                const baseUsage = 300 + (i * 5); // More realistic gradual increase
-                const variation = Math.sin(i / 24 * Math.PI * 2) * 30; // Daily pattern
-                const noise = Math.random() * 20 - 10; // Small random variation
-                return {
-                  time: hour.toISOString(),
-                  used: Math.max(200, Math.min(900, baseUsage + variation + noise)),
-                  total: 1024
-                };
+                const baseUsage = 35 + (i * 2); // Gradual increase
+                const variation = Math.sin(i / 24 * Math.PI * 2) * 10; // Daily pattern
+                const noise = Math.random() * 10 - 5; // Small random variation
+                return Math.min(95, Math.max(5, baseUsage + variation + noise));
               });
               
           // Get CPU usage based on real activity
@@ -158,8 +150,14 @@ serve(async (req) => {
         };
 
         // Record current metrics
+        const currentMemoryValue = Array.isArray(memoryUsage) 
+          ? (typeof memoryUsage[memoryUsage.length - 1] === 'object' 
+              ? memoryUsage[memoryUsage.length - 1].used 
+              : memoryUsage[memoryUsage.length - 1])
+          : 0;
+          
         await supabase.from('system_metrics').insert([
-          { metric_type: 'memory_usage', value: memoryUsage[memoryUsage.length - 1].used },
+          { metric_type: 'memory_usage', value: currentMemoryValue },
           { metric_type: 'cpu_usage', value: cpuUsage },
           { metric_type: 'active_sessions', value: stats.activeSessions },
           { metric_type: 'total_messages', value: stats.totalMessages }

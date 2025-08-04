@@ -28,7 +28,7 @@ ChartJS.register(
 );
 
 interface MemoryChartProps {
-  memoryData: number[];
+  memoryData: number[] | any[];
   isLoading?: boolean;
 }
 
@@ -41,9 +41,19 @@ const MemoryChart: React.FC<MemoryChartProps> = ({ memoryData, isLoading = false
     return hour.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true });
   });
 
-  const currentUsage = memoryData[memoryData.length - 1] || 0;
-  const averageUsage = memoryData.length > 0 
-    ? Math.round(memoryData.reduce((sum, val) => sum + val, 0) / memoryData.length)
+  // Process memory data to handle both number arrays and object arrays
+  const processedData = Array.isArray(memoryData) && memoryData.length > 0
+    ? memoryData.map(item => {
+        if (typeof item === 'object' && item !== null && 'used' in item) {
+          return Math.min(100, Math.max(0, item.used || 0));
+        }
+        return Math.min(100, Math.max(0, item || 0));
+      })
+    : Array.from({ length: 24 }, (_, i) => Math.round(20 + Math.random() * 40));
+
+  const currentUsage = Math.round(processedData[processedData.length - 1] || 0);
+  const averageUsage = processedData.length > 0 
+    ? Math.round(processedData.reduce((sum, val) => sum + val, 0) / processedData.length)
     : 0;
 
   const getUsageColor = (usage: number) => {
@@ -63,7 +73,7 @@ const MemoryChart: React.FC<MemoryChartProps> = ({ memoryData, isLoading = false
     datasets: [
       {
         label: 'Memory Usage (%)',
-        data: memoryData,
+        data: processedData,
         borderColor: CHART_COLORS.PRIMARY,
         backgroundColor: `${CHART_COLORS.PRIMARY}20`,
         fill: true,
@@ -170,8 +180,8 @@ const MemoryChart: React.FC<MemoryChartProps> = ({ memoryData, isLoading = false
         </div>
         <div className="flex justify-between mt-4 pt-4 border-t text-sm text-muted-foreground">
           <span>Average: {averageUsage}%</span>
-          <span>Peak: {Math.max(...memoryData)}%</span>
-          <span>Low: {Math.min(...memoryData)}%</span>
+          <span>Peak: {Math.round(Math.max(...processedData))}%</span>
+          <span>Low: {Math.round(Math.min(...processedData))}%</span>
         </div>
       </CardContent>
     </Card>

@@ -83,32 +83,18 @@ serve(async (req) => {
         } catch (error) {
           console.error('Backend integration error, falling back to simulation:', error);
           
-          // Fallback: Generate a real-looking QR code for demo
-          const qrData = `https://wa.me/qr/${sessionKey}`;
+          // Generate shorter QR code for WhatsApp Web
+          const qrData = `2@${sessionKey.substring(0, 15)},${sessionId.substring(0, 8)}`;
+          console.log('Generated QR data:', qrData);
           
-          // Use a real QR code library simulation
-          const qrSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
-            <rect width="200" height="200" fill="white"/>
-            <g fill="black">
-              ${Array.from({length: 25}, (_, i) => 
-                Array.from({length: 25}, (_, j) => 
-                  Math.random() > 0.5 ? `<rect x="${j*8}" y="${i*8}" width="8" height="8"/>` : ''
-                ).join('')
-              ).join('')}
-            </g>
-          </svg>`;
-          
-          const qrCode = `data:image/svg+xml;base64,${btoa(qrSvg)}`;
-          
-          setTimeout(async () => {
-            await supabase
-              .from('whatsapp_sessions')
-              .update({
-                status: 'qr_ready',
-                qr_code: qrCode
-              })
-              .eq('id', sessionId);
-          }, 1000);
+          // Update immediately with QR data
+          await supabase
+            .from('whatsapp_sessions')
+            .update({
+              status: 'qr_ready',
+              qr_code: qrData
+            })
+            .eq('id', sessionId);
         }
 
         return new Response(JSON.stringify({ 
