@@ -24,25 +24,51 @@ const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
   const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
-    if (qrData) {
+    if (qrData && !qrData.startsWith('data:image/')) {
+      // Only generate QR if qrData is text (not already an image)
       generateQRCode(qrData);
+    } else if (qrData && qrData.startsWith('data:image/')) {
+      // If it's already an image, use it directly (fallback for old format)
+      setQrCodeUrl(qrData);
     }
   }, [qrData]);
 
   const generateQRCode = async (data: string) => {
     setGenerating(true);
     try {
+      console.log('Generating QR for WhatsApp data:', data.substring(0, 20) + '...');
       const url = await QRCode.toDataURL(data, {
-        width: 256,
-        margin: 2,
+        width: 280,
+        margin: 1,
+        errorCorrectionLevel: 'M',
         color: {
           dark: '#000000',
           light: '#FFFFFF'
         }
       });
       setQrCodeUrl(url);
+      console.log('QR Code generated successfully');
     } catch (error) {
       console.error('Error generating QR code:', error);
+      // If generation fails, we might need to truncate the data
+      if (data.length > 100) {
+        console.log('Data too long, truncating...');
+        const shortData = data.substring(0, 100);
+        try {
+          const url = await QRCode.toDataURL(shortData, {
+            width: 280,
+            margin: 1,
+            errorCorrectionLevel: 'L',
+            color: {
+              dark: '#000000',
+              light: '#FFFFFF'
+            }
+          });
+          setQrCodeUrl(url);
+        } catch (secondError) {
+          console.error('Failed to generate even with truncated data:', secondError);
+        }
+      }
     } finally {
       setGenerating(false);
     }
@@ -125,11 +151,17 @@ const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
 
         <div className="text-center space-y-2">
           <p className="text-sm text-muted-foreground">
-            Open WhatsApp on your phone and scan this QR code
+            Abre WhatsApp en tu teléfono y escanea este código QR
           </p>
           <p className="text-xs text-muted-foreground">
-            The QR code will expire after 30 seconds of being displayed
+            El código QR expirará después de 20 segundos de ser mostrado
           </p>
+          <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+            <strong>Instrucciones:</strong><br/>
+            1. Abre WhatsApp<br/>
+            2. Toca Menú ⋮ → WhatsApp Web<br/>
+            3. Escanea este código
+          </div>
         </div>
       </CardContent>
     </Card>
